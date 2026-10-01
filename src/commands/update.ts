@@ -3,11 +3,12 @@ import { type Command, jsonOption, readFlag, readString, readStrings } from '../
 import { resolveDueDate } from '../dueDate.ts';
 import { isDefined } from '../isDefined.ts';
 import { printJson, printTaskDetail } from '../output.ts';
+import { resolveGid } from '../resourceGid.ts';
 import { type Task, taskDetailFields } from '../types.ts';
 
 export const updateCommand: Command = {
   summary: 'Update a task: rename, reschedule, reassign, complete, move',
-  usage: `asana update <task-gid> [--name <text>] [--notes <text>] [--append-notes <text>]
+  usage: `asana update <task-url|gid> [--name <text>] [--notes <text>] [--append-notes <text>]
                [--due <date|none>] [--start <date|none>] [--assignee me|<gid>|<email>|none]
                [--complete] [--incomplete] [--parent <gid|none>]
                [--add-project <gid>]... [--section <gid>] [--remove-project <gid>]...
@@ -30,8 +31,9 @@ export const updateCommand: Command = {
     'add-follower': { type: 'string', multiple: true },
   },
   run: async ({ values, positionals }) => {
-    const gid = positionals[0];
-    if (!isDefined(gid)) throw new Error('Missing <task-gid>. Usage: asana update <task-gid> [flags]');
+    const first = positionals[0];
+    if (!isDefined(first)) throw new Error('Missing <task-url|gid>. Usage: asana update <task-url|gid> [flags]');
+    const gid = resolveGid(first, 'task');
 
     const patch: Record<string, unknown> = {};
     const name = readString(values, 'name');
@@ -61,7 +63,7 @@ export const updateCommand: Command = {
     if (isDefined(assignee)) patch.assignee = assignee === 'none' ? null : assignee;
 
     const parent = readString(values, 'parent');
-    if (isDefined(parent)) patch.parent = parent === 'none' ? null : parent;
+    if (isDefined(parent)) patch.parent = parent === 'none' ? null : resolveGid(parent, 'task');
 
     if (readFlag(values, 'complete') && readFlag(values, 'incomplete')) {
       throw new Error('Pass either --complete or --incomplete, not both.');
@@ -69,8 +71,8 @@ export const updateCommand: Command = {
     if (readFlag(values, 'complete')) patch.completed = true;
     if (readFlag(values, 'incomplete')) patch.completed = false;
 
-    const addProjects = readStrings(values, 'add-project');
-    const removeProjects = readStrings(values, 'remove-project');
+    const addProjects = readStrings(values, 'add-project').map((value) => resolveGid(value, 'project'));
+    const removeProjects = readStrings(values, 'remove-project').map((value) => resolveGid(value, 'project'));
     const addTags = readStrings(values, 'add-tag');
     const addFollowers = readStrings(values, 'add-follower');
     const section = readString(values, 'section');

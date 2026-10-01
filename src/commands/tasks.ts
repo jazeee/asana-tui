@@ -3,12 +3,13 @@ import { type Command, jsonOption, readFlag, readString } from '../command.ts';
 import { resolveDueDate } from '../dueDate.ts';
 import { isDefined } from '../isDefined.ts';
 import { printJson, printTaskList } from '../output.ts';
+import { resolveGid } from '../resourceGid.ts';
 import { type Task, taskListFields } from '../types.ts';
 import { requireWorkspaceGid } from '../workspace.ts';
 
 export const tasksCommand: Command = {
   summary: 'List tasks assigned to you (or anyone) with optional filters',
-  usage: `asana tasks [--assignee me|<gid>|<email>] [--project <gid>] [--workspace <gid>]
+  usage: `asana tasks [--assignee me|<gid>|<email>] [--project <url|gid>] [--workspace <gid>]
              [--all] [--completed] [--overdue] [--due-before <date>] [--due-after <date>]
              [--contains <text>] [--limit <n>] [--json]
 
@@ -29,7 +30,8 @@ Dates accept YYYY-MM-DD, today, tomorrow, or +3d. Defaults to your incomplete ta
   run: async ({ values }) => {
     const includeCompleted = readFlag(values, 'all') || readFlag(values, 'completed');
     const limit = Number(readString(values, 'limit') ?? '50');
-    const project = readString(values, 'project');
+    const projectFlag = readString(values, 'project');
+    const project = isDefined(projectFlag) ? resolveGid(projectFlag, 'project') : undefined;
 
     const fetched = isDefined(project)
       ? await requestAsanaList<Task>(`/projects/${project}/tasks`, {

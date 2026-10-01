@@ -10,10 +10,14 @@ function formatDue(task: Task): string {
   return isDefined(due) ? due : '—'.padEnd(10);
 }
 
+export function formatTaskUrl(task: { gid: string; permalink_url?: string }): string {
+  return task.permalink_url ?? `https://app.asana.com/0/0/${task.gid}`;
+}
+
 export function formatTaskLine(task: Task): string {
   const projects = (task.projects ?? []).map((project) => project.name).filter(isDefined);
   const suffix = projects.length > 0 ? `  [${projects.join(', ')}]` : '';
-  return `${task.completed === true ? '✔' : '○'} ${task.gid.padEnd(16)} ${formatDue(task)}  ${task.name ?? ''}${suffix}`;
+  return `${task.completed === true ? '✔' : '○'} ${formatDue(task)}  ${task.name ?? ''}${suffix}\n  ${formatTaskUrl(task)}`;
 }
 
 export function printTaskList(tasks: Task[]): void {
@@ -27,12 +31,13 @@ export function printTaskList(tasks: Task[]): void {
 
 export function printTaskDetail(task: Task, stories?: Story[], subtasks?: Task[]): void {
   const rows: [string, string | undefined][] = [
-    ['Task', `${task.name ?? ''} (${task.gid})`],
+    ['Task', task.name ?? ''],
+    ['URL', formatTaskUrl(task)],
     ['Status', task.completed === true ? `completed ${task.completed_at ?? ''}`.trim() : 'open'],
     ['Assignee', task.assignee?.name],
     ['Due', task.due_at ?? task.due_on ?? undefined],
     ['Start', task.start_on ?? undefined],
-    ['Parent', isDefined(task.parent) ? `${task.parent.name} (${task.parent.gid})` : undefined],
+    ['Parent', isDefined(task.parent) ? `${task.parent.name} — ${formatTaskUrl(task.parent)}` : undefined],
     [
       'Projects',
       (task.memberships ?? [])
@@ -45,7 +50,6 @@ export function printTaskDetail(task: Task, stories?: Story[], subtasks?: Task[]
     ['Tags', (task.tags ?? []).map((tag) => tag.name).join(', ') || undefined],
     ['Subtasks', isDefined(task.num_subtasks) ? String(task.num_subtasks) : undefined],
     ['Modified', task.modified_at],
-    ['URL', task.permalink_url],
   ];
 
   for (const [label, value] of rows) {
@@ -84,7 +88,7 @@ export function printProjectList(projects: Project[]): void {
   }
   for (const project of projects) {
     process.stdout.write(
-      `${project.gid.padEnd(16)} ${project.name ?? ''}${project.archived === true ? ' (archived)' : ''}\n`,
+      `${project.name ?? ''}${project.archived === true ? ' (archived)' : ''}\n  ${project.permalink_url ?? project.gid}\n`,
     );
   }
 }

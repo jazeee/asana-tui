@@ -116,16 +116,36 @@ asana login                              # OAuth alternative; refreshes silently
 asana logout                             # revoke and forget the stored tokens
 asana me                                 # who am I, and which workspaces
 asana tasks                              # my incomplete tasks, soonest due first
-asana task <gid>                         # one task in full
+asana task <url>                         # one task in full
 asana create <name>                      # create a task
-asana update <gid>                       # change a task
-asana comment <gid> <text>               # add a comment
-asana delete <gid> --yes                 # delete a task
+asana update <url>                       # change a task
+asana comment <url> <text>               # add a comment
+asana delete <url> --yes                 # delete a task
 asana projects                           # list projects / sections
 asana search <query>                     # typeahead over tasks, projects, users
 ```
 
 Run `asana help <command>` for the flags of any one of them.
+
+### Tasks are identified by URL
+
+Every command prints the task's Asana URL rather than a bare gid, and every
+command accepts a URL anywhere it accepts a gid. Output is therefore directly
+actionable — copy a line from `asana tasks` and paste it into `asana update`:
+
+```bash
+asana tasks
+# ○ —           Rework auth out of primary  [Brain Dumps]
+#   https://app.asana.com/1/1187495389489253/project/1219084434562732/task/1219084491890009
+
+asana update https://app.asana.com/1/1187495389489253/project/1219084434562732/task/1219084491890009 --complete
+```
+
+Both the modern `/1/<workspace>/project/<project>/task/<task>` and the legacy
+`/0/<project>/<task>` permalinks are understood, with or without a trailing
+`/f` or a query string. Plain gids still work everywhere. `--project` resolves
+the project out of the same URL, so a task link can be reused as a project
+filter.
 
 ### Querying
 
@@ -133,9 +153,9 @@ Run `asana help <command>` for the flags of any one of them.
 asana tasks --overdue                       # past due and still open
 asana tasks --due-before +7d                # the coming week
 asana tasks --assignee teammate@acme.com
-asana tasks --project 1203... --all         # including completed
+asana tasks --project <project-url> --all   # including completed
 asana tasks --contains invoice --json
-asana task 1203... --comments --subtasks
+asana task <task-url> --comments --subtasks
 ```
 
 Dates accept `YYYY-MM-DD`, `today`, `tomorrow`, `+3d`, `-1w`, or `none`.
@@ -143,19 +163,20 @@ Dates accept `YYYY-MM-DD`, `today`, `tomorrow`, `+3d`, `-1w`, or `none`.
 ### Updating
 
 ```bash
-asana update 1203... --complete
-asana update 1203... --due tomorrow --assignee me
-asana update 1203... --append-notes "Deployed to staging."
-asana update 1203... --add-project 99... --section 88...
-asana update 1203... --due none                  # clear the due date
-asana comment 1203... "Blocked on the API review."
+asana update <task-url> --complete
+asana update <task-url> --due tomorrow --assignee me
+asana update <task-url> --append-notes "Deployed to staging."
+asana update <task-url> --add-project <project-url> --section 88...
+asana update <task-url> --due none                  # clear the due date
+asana comment <task-url> "Blocked on the API review."
+asana delete <task-url> --yes
 ```
 
 ### Creating
 
 ```bash
-asana create "Review the migration plan" --due +2d --assignee me --project 1203...
-asana create "Subtask" --parent 1203...
+asana create "Review the migration plan" --due +2d --assignee me --project <project-url>
+asana create "Subtask" --parent <task-url>
 ```
 
 ## For agents
@@ -165,6 +186,8 @@ asana create "Subtask" --parent 1203...
 - `asana tasks --json` is the cheapest way to get an actionable list: it already
   filters to incomplete, sorts by due date, and includes `gid`, `due_on`,
   `assignee`, `projects`, and `permalink_url`.
+- Text output pairs each task with its URL on the following line, and every
+  command takes that URL back as input, so no gid extraction is ever needed.
 - Mutations are explicit per flag, so a partial failure is reported and the
   final state of the task is re-fetched and printed.
 - Auth needs no attention: tokens refresh themselves. An exit code of `1` with a

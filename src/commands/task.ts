@@ -2,15 +2,17 @@ import { requestAsana, requestAsanaList } from '../client.ts';
 import { type Command, jsonOption, readFlag } from '../command.ts';
 import { isDefined } from '../isDefined.ts';
 import { printJson, printTaskDetail } from '../output.ts';
+import { resolveGid } from '../resourceGid.ts';
 import { type Story, type Task, taskDetailFields, taskListFields } from '../types.ts';
 
 export const taskCommand: Command = {
   summary: 'Show one task in full',
-  usage: 'asana task <task-gid> [--comments] [--subtasks] [--json]',
+  usage: 'asana task <task-url|gid> [--comments] [--subtasks] [--json]',
   options: { ...jsonOption, comments: { type: 'boolean' }, subtasks: { type: 'boolean' } },
   run: async ({ values, positionals }) => {
-    const gid = positionals[0];
-    if (!isDefined(gid)) throw new Error('Missing <task-gid>. Usage: asana task <task-gid>');
+    const first = positionals[0];
+    if (!isDefined(first)) throw new Error('Missing <task-url|gid>. Usage: asana task <task-url|gid>');
+    const gid = resolveGid(first, 'task');
 
     const task = await requestAsana<Task>(`/tasks/${gid}`, { query: { opt_fields: taskDetailFields } });
 

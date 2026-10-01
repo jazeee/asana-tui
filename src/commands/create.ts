@@ -3,13 +3,14 @@ import { type Command, jsonOption, readFlag, readString, readStrings } from '../
 import { resolveDueDate } from '../dueDate.ts';
 import { isDefined } from '../isDefined.ts';
 import { printJson, printTaskDetail } from '../output.ts';
+import { resolveGid } from '../resourceGid.ts';
 import { type Task, taskDetailFields } from '../types.ts';
 import { requireWorkspaceGid } from '../workspace.ts';
 
 export const createCommand: Command = {
   summary: 'Create a task',
   usage: `asana create <name> [--notes <text>] [--due <date>] [--assignee me|<gid>|<email>]
-               [--project <gid>]... [--parent <gid>] [--workspace <gid>] [--json]`,
+               [--project <url|gid>]... [--parent <url|gid>] [--workspace <gid>] [--json]`,
   options: {
     ...jsonOption,
     notes: { type: 'string' },
@@ -23,8 +24,9 @@ export const createCommand: Command = {
     const name = positionals.join(' ').trim();
     if (name === '') throw new Error('Missing <name>. Usage: asana create "Task name" [flags]');
 
-    const projects = readStrings(values, 'project');
-    const parent = readString(values, 'parent');
+    const projects = readStrings(values, 'project').map((value) => resolveGid(value, 'project'));
+    const parentFlag = readString(values, 'parent');
+    const parent = isDefined(parentFlag) ? resolveGid(parentFlag, 'task') : undefined;
     const due = readString(values, 'due');
     const assignee = readString(values, 'assignee');
     const notes = readString(values, 'notes');

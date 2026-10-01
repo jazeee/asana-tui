@@ -2,12 +2,13 @@ import { requestAsanaList } from '../client.ts';
 import { type Command, jsonOption, readFlag, readString } from '../command.ts';
 import { isDefined } from '../isDefined.ts';
 import { printJson, printProjectList } from '../output.ts';
+import { resolveGid } from '../resourceGid.ts';
 import type { Project, Resource } from '../types.ts';
 import { requireWorkspaceGid } from '../workspace.ts';
 
 export const projectsCommand: Command = {
   summary: 'List projects, or the sections of one project',
-  usage: 'asana projects [--workspace <gid>] [--archived] [--contains <text>] [--sections <project-gid>] [--limit <n>] [--json]',
+  usage: 'asana projects [--workspace <gid>] [--archived] [--contains <text>] [--sections <project-url|gid>] [--limit <n>] [--json]',
   options: {
     ...jsonOption,
     workspace: { type: 'string' },
@@ -17,9 +18,9 @@ export const projectsCommand: Command = {
     limit: { type: 'string' },
   },
   run: async ({ values }) => {
-    const sectionsOf = readString(values, 'sections');
-    if (isDefined(sectionsOf)) {
-      const sections = await requestAsanaList<Resource>(`/projects/${sectionsOf}/sections`, {
+    const sectionsFlag = readString(values, 'sections');
+    if (isDefined(sectionsFlag)) {
+      const sections = await requestAsanaList<Resource>(`/projects/${resolveGid(sectionsFlag, 'project')}/sections`, {
         query: { opt_fields: 'name' },
       });
       if (readFlag(values, 'json')) {

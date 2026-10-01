@@ -1,4 +1,4 @@
-export type Resource = { gid: string; name?: string; resource_type?: string };
+export type Resource = { gid: string; name?: string; resource_type?: string; permalink_url?: string };
 
 export type User = Resource & { email?: string; workspaces?: Resource[] };
 
@@ -46,4 +46,4 @@ export type Project = Resource & {
 export const taskListFields =
   'name,completed,due_on,due_at,assignee.name,projects.name,permalink_url,modified_at';
 
-export const taskDetailFields = `${taskListFields},notes,start_on,completed_at,created_at,parent.name,tags.name,followers.name,num_subtasks,custom_fields.name,custom_fields.display_value,memberships.project.name,memberships.section.name`;
+export const taskDetailFields = `${taskListFields},notes,start_on,completed_at,created_at,parent.name,parent.permalink_url,tags.name,followers.name,num_subtasks,custom_fields.name,custom_fields.display_value,memberships.project.name,memberships.section.name`;
