@@ -18,29 +18,81 @@ Or call it directly: `node src/cli.ts <command>`.
 
 ## Authenticate
 
-Preferred — a personal access token from <https://app.asana.com/0/my-apps>:
+OAuth is the primary path, because many orgs disable personal access tokens.
 
-```bash
-asana auth --token 1/1234:abcdef... --workspace 1203...
+**One-time setup.** Create an app at <https://app.asana.com/0/my-apps> → *Create
+new app* → *OAuth*. Add this exact redirect URL:
+
+```
+http://localhost:8080/callback
 ```
 
-The token is written to `~/.config/asana-cli/config.json` with mode `0600`.
-`ASANA_TOKEN` and `ASANA_WORKSPACE` override the file if you prefer env vars.
+Copy the **Client ID**. A client secret is not required — the CLI uses PKCE
+(S256) and authenticates as a public client — but it is accepted via
+`--client-secret` if your app is configured as confidential.
 
-Fallback — a browser session cookie. Copy the entire `Cookie:` request header
-from any logged-in `app.asana.com` request in devtools:
+**Log in.** Once, ever:
 
 ```bash
-asana auth --cookie 'xsrf_token=...; ticket=...; ...'
+asana login --client-id 1210987654321098
 ```
 
-Cookies expire and break without warning; use a token unless you can't.
+This opens your browser, captures the callback on a short-lived local server,
+exchanges the code, and stores the result in `~/.config/asana-cli/config.json`
+(mode `0600`, written atomically).
 
-`--workspace` is optional if your account has exactly one workspace.
+### Persistence across sessions
+
+Asana access tokens last one hour; the refresh token does not expire until it is
+revoked. The CLI stores the refresh token and renews access automatically, so
+every later session — and every agent invocation — is already authenticated:
+
+- A valid access token is reused as-is, with no network round trip.
+- A token expired, or within 60s of expiring, is refreshed before the request.
+- A `401` from Asana triggers one forced refresh and a single retry.
+
+Nothing re-prompts until you run `asana logout` or revoke the app in Asana.
+
+### Headless and remote shells
+
+No browser on the box? Authorize anywhere and paste the URL you land on:
+
+```bash
+asana login --client-id <id> --manual
+```
+
+The `state` parameter is verified on both paths, so a URL from a different login
+attempt is rejected.
+
+### Fallbacks
+
+```bash
+asana auth --token 1/1234:abcdef...          # personal access token, if your org allows them
+asana auth --cookie 'xsrf_token=...; ticket=...'   # browser session cookie
+```
+
+For the cookie, copy the entire `Cookie:` request header from a logged-in
+`app.asana.com` request in devtools. It expires without warning — a last resort.
+
+### Workspace and env vars
+
+`asana login` records your workspace automatically when the account has exactly
+one; otherwise set it with `asana auth --workspace <gid>`. The gid is the number
+in your board URL — `https://app.asana.com/1/1187495389489253/home` →
+`1187495389489253`.
+
+`ASANA_CLIENT_ID`, `ASANA_CLIENT_SECRET`, `ASANA_TOKEN`, `ASANA_COOKIE`, and
+`ASANA_WORKSPACE` all override the config file.
+
+Inspect state at any time with `asana auth` (add `--show` to verify against the
+API, `--json` for a machine-readable summary).
 
 ## Commands
 
 ```
+asana login                              # OAuth, once; refreshes silently after that
+asana logout                             # revoke and forget the stored tokens
+asana auth                               # inspect credentials / set the workspace
 asana me                                 # who am I, and which workspaces
 asana tasks                              # my incomplete tasks, soonest due first
 asana task <gid>                         # one task in full
@@ -93,6 +145,18 @@ asana create "Subtask" --parent 1203...
   `assignee`, `projects`, and `permalink_url`.
 - Mutations are explicit per flag, so a partial failure is reported and the
   final state of the task is re-fetched and printed.
+- Auth needs no attention: tokens refresh themselves. An exit code of `1` with a
+  message mentioning `asana login` is the only case needing a human.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| `No OAuth client id` | `asana login --client-id <id>` after registering the app |
+| `redirect_uri` mismatch in the browser | The URL in your app settings must equal `--redirect-uri` exactly, including port and path |
+| `Port 8080 is already in use` | Register and pass a different `--redirect-uri` |
+| Browser never opens | Use the printed URL, or `--manual` |
+| `Asana rejected the credentials` | `asana login` again; the app was likely revoked |
 
 ## Development
 

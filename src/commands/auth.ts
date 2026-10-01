@@ -1,18 +1,28 @@
 import { requestAsana } from '../client.ts';
-import { configPath, readConfig, writeConfig } from '../config.ts';
+import { configPath, readConfig, updateConfig, writeConfig } from '../config.ts';
 import { isDefined } from '../isDefined.ts';
 import { type Command, jsonOption, readFlag, readString } from '../command.ts';
 import { printJson } from '../output.ts';
 import type { User } from '../types.ts';
 
 export const authCommand: Command = {
-  summary: 'Store credentials and the default workspace',
-  usage: `asana auth [--token <pat>] [--cookie <cookie-header>] [--workspace <gid>] [--show] [--clear]
+  summary: 'Inspect or set stored credentials and the default workspace',
+  usage: `asana auth [--show] [--workspace <gid>] [--client-id <id>] [--client-secret <secret>]
+             [--token <pat>] [--cookie <cookie-header>] [--clear]
 
-Create a personal access token at https://app.asana.com/0/my-apps.
-Cookie auth is a fallback: copy the whole "Cookie:" request header from a logged-in
-app.asana.com request. It expires and is less reliable than a token.`,
-  options: { ...jsonOption, token: { type: 'string' }, cookie: { type: 'string' }, workspace: { type: 'string' }, show: { type: 'boolean' }, clear: { type: 'boolean' } },
+Use "asana login" for the normal OAuth flow. This command is for inspecting state
+and for the fallbacks: a personal access token, or a browser session cookie copied
+from a logged-in app.asana.com request.`,
+  options: {
+    ...jsonOption,
+    show: { type: 'boolean' },
+    workspace: { type: 'string' },
+    'client-id': { type: 'string' },
+    'client-secret': { type: 'string' },
+    token: { type: 'string' },
+    cookie: { type: 'string' },
+    clear: { type: 'boolean' },
+  },
   run: async ({ values }) => {
     if (readFlag(values, 'clear')) {
       writeConfig({});
@@ -20,39 +30,47 @@ app.asana.com request. It expires and is less reliable than a token.`,
       return;
     }
 
+    const changes: Record<string, string> = {};
+    for (const [flag, key] of [
+      ['workspace', 'workspace'],
+      ['client-id', 'clientId'],
+      ['client-secret', 'clientSecret'],
+      ['token', 'token'],
+      ['cookie', 'cookie'],
+    ] as const) {
+      const value = readString(values, flag);
+      if (isDefined(value)) changes[key] = value;
+    }
+
+    if (Object.keys(changes).length > 0) updateConfig(changes);
+
     const config = readConfig();
-    const token = readString(values, 'token');
-    const cookie = readString(values, 'cookie');
-    const workspace = readString(values, 'workspace');
+    const summary = {
+      configPath,
+      method: isDefined(config.refreshToken)
+        ? 'oauth'
+        : isDefined(config.token)
+          ? 'personal access token'
+          : isDefined(config.cookie)
+            ? 'cookie'
+            : 'none',
+      clientId: config.clientId ?? null,
+      workspace: config.workspace ?? null,
+      accessTokenExpiresAt: isDefined(config.expiresAt) ? new Date(config.expiresAt).toISOString() : null,
+    };
 
-    if (isDefined(token)) {
-      config.token = token;
-      delete config.cookie;
-    }
-    if (isDefined(cookie)) {
-      config.cookie = cookie;
-      delete config.token;
-    }
-    if (isDefined(workspace)) config.workspace = workspace;
-
-    const changed = isDefined(token) || isDefined(cookie) || isDefined(workspace);
-    if (changed) writeConfig(config);
-
-    if (readFlag(values, 'show') || !changed) {
-      const summary = {
-        configPath,
-        auth: isDefined(config.token) ? 'token' : isDefined(config.cookie) ? 'cookie' : 'none',
-        workspace: config.workspace ?? null,
-      };
-      if (readFlag(values, 'json')) {
-        printJson(summary);
-        return;
-      }
-      process.stdout.write(`config    ${summary.configPath}\nauth      ${summary.auth}\nworkspace ${summary.workspace ?? '—'}\n`);
+    if (readFlag(values, 'json')) {
+      printJson(summary);
       return;
     }
 
-    const me = await requestAsana<User>('/users/me', { query: { opt_fields: 'name,email' } });
-    process.stdout.write(`Saved ${configPath}. Authenticated as ${me.name ?? ''} <${me.email ?? ''}>\n`);
+    for (const [label, value] of Object.entries(summary)) {
+      process.stdout.write(`${label.padEnd(21)} ${value ?? '—'}\n`);
+    }
+
+    if (readFlag(values, 'show') && summary.method !== 'none') {
+      const me = await requestAsana<User>('/users/me', { query: { opt_fields: 'name,email' } });
+      process.stdout.write(`\nAuthenticated as ${me.name ?? ''} <${me.email ?? ''}>\n`);
+    }
   },
 };

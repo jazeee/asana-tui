@@ -1,9 +1,16 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { isDefined } from './isDefined.ts';
 
 export type Config = {
+  clientId?: string;
+  clientSecret?: string;
+  redirectUri?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  /** Epoch milliseconds at which `accessToken` stops working. */
+  expiresAt?: number;
   token?: string;
   cookie?: string;
   workspace?: string;
@@ -25,22 +32,16 @@ export function readConfig(): Config {
 
 export function writeConfig(config: Config): void {
   mkdirSync(dirname(configPath), { recursive: true });
-  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  // Another CLI process may be refreshing concurrently; swap the file in atomically.
+  const staging = `${configPath}.${process.pid}.tmp`;
+  writeFileSync(staging, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  renameSync(staging, configPath);
 }
 
-export type Auth = { kind: 'token'; token: string } | { kind: 'cookie'; cookie: string };
-
-export function resolveAuth(): Auth {
-  const config = readConfig();
-  const token = process.env.ASANA_TOKEN ?? process.env.ASANA_ACCESS_TOKEN ?? config.token;
-  if (isDefined(token) && token !== '') return { kind: 'token', token };
-
-  const cookie = process.env.ASANA_COOKIE ?? config.cookie;
-  if (isDefined(cookie) && cookie !== '') return { kind: 'cookie', cookie };
-
-  throw new Error(
-    `No Asana credentials found. Run "asana auth --token <personal-access-token>" (create one at https://app.asana.com/0/my-apps), or set ASANA_TOKEN.`,
-  );
+export function updateConfig(changes: Partial<Config>): Config {
+  const merged = { ...readConfig(), ...changes };
+  writeConfig(merged);
+  return merged;
 }
 
 export function resolveWorkspace(override?: string): string | undefined {
@@ -48,4 +49,21 @@ export function resolveWorkspace(override?: string): string | undefined {
   const fromEnv = process.env.ASANA_WORKSPACE;
   if (isDefined(fromEnv) && fromEnv !== '') return fromEnv;
   return readConfig().workspace;
+}
+
+export const defaultRedirectUri = 'http://localhost:8080/callback';
+
+export function resolveClientId(override?: string): string {
+  const clientId = override ?? process.env.ASANA_CLIENT_ID ?? readConfig().clientId;
+  if (!isDefined(clientId) || clientId === '') {
+    throw new Error(
+      'No OAuth client id. Register an app at https://app.asana.com/0/my-apps, then run "asana login --client-id <id>".',
+    );
+  }
+  return clientId;
+}
+
+export function resolveClientSecret(override?: string): string | undefined {
+  const secret = override ?? process.env.ASANA_CLIENT_SECRET ?? readConfig().clientSecret;
+  return isDefined(secret) && secret !== '' ? secret : undefined;
 }

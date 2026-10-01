@@ -1,4 +1,4 @@
-import { resolveAuth } from './config.ts';
+import { type Credentials, canRefresh, resolveCredentials } from './auth/credentials.ts';
 import { isDefined } from './isDefined.ts';
 
 const baseUrl = process.env.ASANA_BASE_URL ?? 'https://app.asana.com/api/1.0';
@@ -15,19 +15,18 @@ export class AsanaError extends Error {
   }
 }
 
-function buildHeaders(method: string): Headers {
+function buildHeaders(credentials: Credentials, method: string): Headers {
   const headers = new Headers({ Accept: 'application/json' });
   if (method !== 'GET') headers.set('Content-Type', 'application/json');
 
-  const auth = resolveAuth();
-  if (auth.kind === 'token') {
-    headers.set('Authorization', `Bearer ${auth.token}`);
+  if (credentials.kind === 'bearer') {
+    headers.set('Authorization', `Bearer ${credentials.token}`);
     return headers;
   }
 
-  headers.set('Cookie', auth.cookie);
+  headers.set('Cookie', credentials.cookie);
   // Asana's session auth rejects writes without the xsrf cookie echoed back as a header.
-  const xsrf = /(?:^|;\s*)xsrf_token=([^;]+)/.exec(auth.cookie)?.[1];
+  const xsrf = /(?:^|;\s*)xsrf_token=([^;]+)/.exec(credentials.cookie)?.[1];
   if (isDefined(xsrf)) {
     headers.set('X-XSRF-Token', decodeURIComponent(xsrf));
     headers.set('X-Asana-Xsrf-Token', decodeURIComponent(xsrf));
@@ -41,6 +40,22 @@ function buildUrl(path: string, query?: Query): URL {
     if (isDefined(value)) url.searchParams.set(key, String(value));
   }
   return url;
+}
+
+async function fetchAsana(url: URL, method: string, body?: unknown): Promise<Response> {
+  const send = async (credentials: Credentials) =>
+    fetch(url, {
+      method,
+      headers: buildHeaders(credentials, method),
+      body: isDefined(body) ? JSON.stringify({ data: body }) : undefined,
+      redirect: 'manual',
+    });
+
+  const response = await send(await resolveCredentials());
+  if (response.status !== 401 || !canRefresh()) return response;
+
+  // The stored access token was revoked or expired early; one forced refresh then give up.
+  return send(await resolveCredentials({ forceRefresh: true }));
 }
 
 async function readError(response: Response): Promise<string> {
@@ -57,25 +72,20 @@ async function readError(response: Response): Promise<string> {
   return text === '' ? response.statusText : text;
 }
 
+async function raiseForStatus(response: Response): Promise<void> {
+  if (response.status === 401 || response.status === 302) {
+    throw new AsanaError('Asana rejected the credentials. Run "asana login" to reconnect.', response.status);
+  }
+  if (!response.ok) throw new AsanaError(await readError(response), response.status);
+}
+
 export async function requestAsana<T>(
   path: string,
   options: { method?: string; query?: Query; body?: unknown } = {},
 ): Promise<T> {
   const method = options.method ?? 'GET';
-  const response = await fetch(buildUrl(path, options.query), {
-    method,
-    headers: buildHeaders(method),
-    body: isDefined(options.body) ? JSON.stringify({ data: options.body }) : undefined,
-    redirect: 'manual',
-  });
-
-  if (response.status === 401 || response.status === 302) {
-    throw new AsanaError(
-      'Asana rejected the credentials. Refresh them with "asana auth --token <pat>".',
-      response.status,
-    );
-  }
-  if (!response.ok) throw new AsanaError(await readError(response), response.status);
+  const response = await fetchAsana(buildUrl(path, options.query), method, options.body);
+  await raiseForStatus(response);
   if (response.status === 204) return undefined as T;
 
   return ((await response.json()) as { data: T }).data;
@@ -96,8 +106,8 @@ export async function requestAsanaList<T>(
       limit: Math.min(100, limit - collected.length),
       offset,
     });
-    const response = await fetch(url, { method: 'GET', headers: buildHeaders('GET'), redirect: 'manual' });
-    if (!response.ok) throw new AsanaError(await readError(response), response.status);
+    const response = await fetchAsana(url, 'GET');
+    await raiseForStatus(response);
 
     const page = (await response.json()) as { data: T[]; next_page?: { offset?: string } | null };
     collected.push(...page.data);
