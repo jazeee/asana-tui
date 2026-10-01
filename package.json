@@ -1,0 +1,23 @@
+{
+  "name": "asana-cli",
+  "version": "0.1.0",
+  "description": "Small, agent-friendly CLI for querying and updating Asana tasks",
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "bin": {
+    "asana": "./src/cli.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "asana": "node src/cli.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}
