@@ -18,7 +18,27 @@ Or call it directly: `node src/cli.ts <command>`.
 
 ## Authenticate
 
-OAuth is the primary path, because many orgs disable personal access tokens.
+A personal access token is the simplest path and needs no app registration:
+
+```bash
+asana auth --token 1/1234:abcdef... --workspace 1187495389489253
+```
+
+Create one at <https://app.asana.com/0/my-apps> → *Create new token*. It is
+written to `~/.config/asana-cli/config.json` at mode `0600` and does not expire,
+so every later session and agent invocation is already authenticated.
+
+To avoid leaving the token in your shell history or in `ps` output, pipe it in
+instead:
+
+```bash
+read -rs TOKEN && ASANA_TOKEN=$TOKEN asana auth --show   # verify before storing
+```
+
+### OAuth
+
+Use OAuth when your org disables personal access tokens, or when you want
+scoped, revocable access.
 
 **One-time setup.** Create an app at <https://app.asana.com/0/my-apps> → *Create
 new app* → *OAuth*. Add this exact redirect URL:
@@ -41,7 +61,7 @@ This opens your browser, captures the callback on a short-lived local server,
 exchanges the code, and stores the result in `~/.config/asana-cli/config.json`
 (mode `0600`, written atomically).
 
-### Persistence across sessions
+#### Persistence across sessions
 
 Asana access tokens last one hour; the refresh token does not expire until it is
 revoked. The CLI stores the refresh token and renews access automatically, so
@@ -53,7 +73,7 @@ every later session — and every agent invocation — is already authenticated:
 
 Nothing re-prompts until you run `asana logout` or revoke the app in Asana.
 
-### Headless and remote shells
+#### Headless and remote shells
 
 No browser on the box? Authorize anywhere and paste the URL you land on:
 
@@ -64,15 +84,16 @@ asana login --client-id <id> --manual
 The `state` parameter is verified on both paths, so a URL from a different login
 attempt is rejected.
 
-### Fallbacks
+### Cookie fallback
+
+If both of the above are blocked, copy the entire `Cookie:` request header from a
+logged-in `app.asana.com` request in devtools:
 
 ```bash
-asana auth --token 1/1234:abcdef...          # personal access token, if your org allows them
-asana auth --cookie 'xsrf_token=...; ticket=...'   # browser session cookie
+asana auth --cookie 'xsrf_token=...; ticket=...'
 ```
 
-For the cookie, copy the entire `Cookie:` request header from a logged-in
-`app.asana.com` request in devtools. It expires without warning — a last resort.
+It expires without warning — a genuine last resort.
 
 ### Workspace and env vars
 
@@ -81,7 +102,7 @@ one; otherwise set it with `asana auth --workspace <gid>`. The gid is the number
 in your board URL — `https://app.asana.com/1/1187495389489253/home` →
 `1187495389489253`.
 
-`ASANA_CLIENT_ID`, `ASANA_CLIENT_SECRET`, `ASANA_TOKEN`, `ASANA_COOKIE`, and
+`ASANA_TOKEN`, `ASANA_CLIENT_ID`, `ASANA_CLIENT_SECRET`, `ASANA_COOKIE`, and
 `ASANA_WORKSPACE` all override the config file.
 
 Inspect state at any time with `asana auth` (add `--show` to verify against the
@@ -90,15 +111,16 @@ API, `--json` for a machine-readable summary).
 ## Commands
 
 ```
-asana login                              # OAuth, once; refreshes silently after that
+asana auth                               # inspect credentials / set token + workspace
+asana login                              # OAuth alternative; refreshes silently
 asana logout                             # revoke and forget the stored tokens
-asana auth                               # inspect credentials / set the workspace
 asana me                                 # who am I, and which workspaces
 asana tasks                              # my incomplete tasks, soonest due first
 asana task <gid>                         # one task in full
 asana create <name>                      # create a task
 asana update <gid>                       # change a task
 asana comment <gid> <text>               # add a comment
+asana delete <gid> --yes                 # delete a task
 asana projects                           # list projects / sections
 asana search <query>                     # typeahead over tasks, projects, users
 ```
@@ -156,7 +178,8 @@ asana create "Subtask" --parent 1203...
 | `redirect_uri` mismatch in the browser | The URL in your app settings must equal `--redirect-uri` exactly, including port and path |
 | `Port 8080 is already in use` | Register and pass a different `--redirect-uri` |
 | Browser never opens | Use the printed URL, or `--manual` |
-| `Asana rejected the credentials` | `asana login` again; the app was likely revoked |
+| `Asana rejected the credentials` | Token revoked or expired: `asana auth --token <new>`, or `asana login` |
+| `Not a recognized ID` | The gid belongs to another workspace, or the task was deleted |
 
 ## Development
 

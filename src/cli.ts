@@ -4,6 +4,7 @@ import type { Command } from './command.ts';
 import { authCommand } from './commands/auth.ts';
 import { commentCommand } from './commands/comment.ts';
 import { createCommand } from './commands/create.ts';
+import { deleteCommand } from './commands/delete.ts';
 import { loginCommand } from './commands/login.ts';
 import { logoutCommand } from './commands/logout.ts';
 import { meCommand } from './commands/me.ts';
@@ -23,6 +24,7 @@ const commands: Record<string, Command> = {
   task: taskCommand,
   create: createCommand,
   update: updateCommand,
+  delete: deleteCommand,
   comment: commentCommand,
   projects: projectsCommand,
   search: searchCommand,
