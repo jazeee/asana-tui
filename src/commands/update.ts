@@ -12,7 +12,10 @@ export const updateCommand: Command = {
                [--due <date|none>] [--start <date|none>] [--assignee me|<gid>|<email>|none]
                [--complete] [--incomplete] [--parent <gid|none>]
                [--add-project <gid>]... [--section <gid>] [--remove-project <gid>]...
-               [--add-tag <gid>]... [--add-follower <gid>]... [--json]`,
+               [--add-tag <gid>]... [--add-follower <gid>]... [--json]
+
+--start needs a due date: pass --due too, or the task's existing due date is reused.
+--due none also clears the start date.`,
   options: {
     ...jsonOption,
     name: { type: 'string' },
@@ -56,8 +59,21 @@ export const updateCommand: Command = {
       patch.due_at = null;
     }
 
+    // Asana requires due_on or due_at in the same request whenever start_on is set or cleared.
     const start = readString(values, 'start');
-    if (isDefined(start)) patch.start_on = resolveDueDate(start);
+    if (isDefined(start)) {
+      patch.start_on = resolveDueDate(start);
+      if (!isDefined(due)) {
+        const current = await requestAsana<Task>(`/tasks/${gid}`, { query: { opt_fields: 'due_on,due_at' } });
+        if (isDefined(current.due_at)) patch.due_at = current.due_at;
+        else patch.due_on = current.due_on ?? null;
+      }
+      if (isDefined(patch.start_on) && !isDefined(patch.due_on) && !isDefined(patch.due_at)) {
+        throw new Error('A start date needs a due date, and this task has none. Pass --due along with --start.');
+      }
+    } else if (isDefined(due) && !isDefined(patch.due_on)) {
+      patch.start_on = null;
+    }
 
     const assignee = readString(values, 'assignee');
     if (isDefined(assignee)) patch.assignee = assignee === 'none' ? null : assignee;
